@@ -60,6 +60,7 @@ def _prepare_shell_command(command):
 
 
 def _shell(command):
+    print('commnad: ' + command)  # TODO: XXX
     output = _adb_command('shell', args=[command])
     fixed_output = output.replace(b'\r\r\n', b'\n')
     return fixed_output
@@ -170,17 +171,68 @@ def do_commands(commands):
     return results
 
 
-# print(do_command('cat /data/local/tmp/aaa'))
+STATUS_PREFIX_MAGIC = '__STATUS_QTMALS12K__='
+TRAP_COMMAND = Unquoted('trap "echo -n {prefix}\$?" ERR'.format(prefix=STATUS_PREFIX_MAGIC))
 
 
-commands = ['cat /data/local/tmp/aaa', 'cat /data/local/tmp/ccc', 'cat /data/local/tmp/bbb']
+def do_command_base(command):
+    commands = [TRAP_COMMAND, _prepare_shell_command(command)]
+    output = shell_commands(commands)
+    magic_index = output.rfind(bytes(STATUS_PREFIX_MAGIC, encoding='ascii'))
+    if magic_index == -1:
+        return CommandResult(output, 0)
+    status_index = magic_index + len(STATUS_PREFIX_MAGIC)
+    output, status = output[:magic_index], output[status_index:]
+    status = int(status)
+    return CommandResult(output, status)
 
-# for result in do_commands(commands):
+
+def do_command(command):
+    output, status = do_command_base(command)
+    if status != 0:
+        raise ShellError(status, output)
+    return output
+
+
+MAGIC = '_output_Gjn1DpA_'
+ECHO_OUTPUT_PREFIX_TEMPLATE = 'echo -n {magic}{id}:'
+import re
+
+REGEX = re.compile(b'_output_Gjn1DpA_(\d+):')
+
+
+def do_commands_base(commands):
+    n = len(commands)
+    commands = [_prepare_shell_command(command) for command in commands]
+    echo_commands = [ECHO_OUTPUT_PREFIX_TEMPLATE.format(magic=MAGIC, id=i) for i in range(n)]
+
+    # zip the lists into one list
+    commands = [j for i in zip(echo_commands, commands) for j in i]
+
+    commands.insert(0, TRAP_COMMAND)
+
+    output = shell_commands(commands)
+    print('output:\n' + output.decode('utf8'))
+
+    status_magic_index = output.rfind(bytes(STATUS_PREFIX_MAGIC, encoding='ascii'))
+    if status_magic_index == -1:
+        status = 0
+    else:
+        status_index = status_magic_index + len(STATUS_PREFIX_MAGIC)
+        output, status = output[:status_magic_index], output[status_index:]
+        status = int(status)
+
+    matches = list(REGEX.finditer(output))
+
+    # TODO: ughhhh. trap does't stop execution in "cat XXX; cat ZZZ" ...
+
+    return matches
+
+
+COMMANDS = ['cat /data/local/tmp/aaa', 'cat /data/local/tmp/xxx', 'cat /data/local/tmp/bbb']
+
+# for result in do_commands_base(COMMANDS):
 #     print(result)
+print(do_commands_base(COMMANDS))
 
-# print(shell_commands(
-#     [
-#         Unquoted("trap 'echo -n __$?' ERR"),
-#         'cat /data/local/tmp/aaaX',
-#     ]
-# ))
+# print(do_command('cat /data/local/tmp/aaa'))
