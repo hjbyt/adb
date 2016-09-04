@@ -20,6 +20,10 @@ class ShellError(Exception):
         self.message = message
 
 
+class DeviceConnectionError(Exception):
+    pass
+
+
 BUSYBOX = '/data/local/tmp/busybox'
 
 STATUS_PREFIX_MAGIC = '__STATUS_QTMALS12K__='
@@ -70,6 +74,8 @@ def do_command_base(command):
     commands = [_prepare_shell_command(command), ECHO_STATUS_COMMAND]
     output = _shell_commands(commands)
     magic_index = output.rfind(bytes(STATUS_PREFIX_MAGIC, encoding='ascii'))
+    if magic_index == -1:
+        raise DeviceConnectionError()
     status_index = magic_index + len(STATUS_PREFIX_MAGIC)
     output, status = output[:magic_index], output[status_index:]
     status = int(status)
