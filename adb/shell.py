@@ -1,7 +1,11 @@
 import subprocess
 import shlex
 from collections import namedtuple
-from adb.adb_base import shell
+import tempfile
+from adb.adb_base import shell, push, pull
+from pathlib import Path, PurePosixPath
+import random
+from contextlib import contextmanager
 
 
 class Unquoted(str):
@@ -28,7 +32,7 @@ def _quote_if_needed(string):
     if isinstance(string, Unquoted):
         return string
     else:
-        return shlex.quote(string)
+        return shlex.quote(str(string))
 
 
 def _prepare_shell_command(command):
@@ -75,8 +79,30 @@ def do_command(command):
     return output
 
 
-def run_script(script, cwd=None):
-    pass
+def run_script(script, args=[], remote_dest_dir=None):
+    temp_script_name = 'temp_script_%d' % random.randrange(10000)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_dir = Path(temp_dir)
+        temp_script_path = temp_dir / temp_script_name
+        temp_script_path.write_text(script)
+        return execute_file(temp_script_path, args=args, remote_dest_dir=remote_dest_dir)
 
 
-print(do_command('echo asdf'))
+@contextmanager
+def temp_remote_file(local_file_path, remote_dest_dir=None):
+    if remote_dest_dir is None:
+        remote_dest_dir = '/data/local/tmp'
+    local_file_path = Path(local_file_path)
+    remote_dest_dir = PurePosixPath(remote_dest_dir)
+    remote_dest = remote_dest_dir / local_file_path.name
+    push(local_file_path, remote_dest)
+    try:
+        yield remote_dest
+    finally:
+        do_command(['rm', remote_dest])
+
+
+def execute_file(local_file_path, args=[], remote_dest_dir=None):
+    with temp_remote_file(local_file_path, remote_dest_dir) as remote_file:
+        do_command(['chmod', '700', remote_file])
+        return do_command([remote_file] + args)
