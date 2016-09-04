@@ -2,11 +2,12 @@ import subprocess
 import shlex
 from collections import namedtuple
 import tempfile
-from adb.adb_base import shell, push
 from pathlib import Path, PurePosixPath
 import random
 from contextlib import contextmanager
 import io
+import tarfile
+from adb.adb_base import shell, push
 
 
 class Unquoted(str):
@@ -18,6 +19,8 @@ class ShellError(Exception):
         self.status = status
         self.message = message
 
+
+BUSYBOX = '/data/local/tmp/busybox'
 
 STATUS_PREFIX_MAGIC = '__STATUS_QTMALS12K__='
 ECHO_STATUS_COMMAND = Unquoted('echo -n {magic}$?'.format(magic=STATUS_PREFIX_MAGIC))
@@ -119,3 +122,20 @@ def do_commands(commands, trap=True, cd=None):
     script = '\n'.join(commands_)
     return run_script(script)
 
+
+def push_extract_tar(local_tar):
+    with temp_remote_file(local_tar) as temp_tar:
+        do_command([BUSYBOX, 'tar', 'xfz', temp_tar])
+
+
+def push_files(files):
+    if isinstance(files, dict):
+        files = files.items()
+    temp_tar_name = 'temp_%d.tar.gz' % random.randrange(10000)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_dir = Path(temp_dir)
+        temp_tar_path = str(temp_dir / temp_tar_name)
+        with tarfile.open(temp_tar_path, mode='w:gz') as temp_tar:
+            for local_source, remote_dest in files:
+                temp_tar.add(local_source, arcname=remote_dest)
+        push_extract_tar(temp_tar_path)
