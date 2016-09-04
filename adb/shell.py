@@ -2,10 +2,11 @@ import subprocess
 import shlex
 from collections import namedtuple
 import tempfile
-from adb.adb_base import shell, push, pull
+from adb.adb_base import shell, push
 from pathlib import Path, PurePosixPath
 import random
 from contextlib import contextmanager
+import io
 
 
 class Unquoted(str):
@@ -84,7 +85,8 @@ def run_script(script, args=[], remote_dest_dir=None):
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_dir = Path(temp_dir)
         temp_script_path = temp_dir / temp_script_name
-        temp_script_path.write_text(script)
+        with io.open(str(temp_script_path), mode='w', newline='') as temp_script_file:
+            temp_script_file.write(script)
         return execute_file(temp_script_path, args=args, remote_dest_dir=remote_dest_dir)
 
 
@@ -106,3 +108,14 @@ def execute_file(local_file_path, args=[], remote_dest_dir=None):
     with temp_remote_file(local_file_path, remote_dest_dir) as remote_file:
         do_command(['chmod', '700', remote_file])
         return do_command([remote_file] + args)
+
+
+def do_commands(commands, trap=True, cd=None):
+    commands_ = commands[:]
+    if cd is not None:
+        commands_.insert(0, 'cd %s' % str(cd))
+    if trap:
+        commands_.insert(0, 'trap exit ERR')
+    script = '\n'.join(commands_)
+    return run_script(script)
+
